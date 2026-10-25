@@ -48,6 +48,8 @@
       .st-pending { background:rgba(154,106,0,.14); color:var(--warn); }
       .st-batal { background:rgba(176,42,42,.12); color:var(--err); }
       .filters { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+      .acct { border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px; background:var(--surface2); }
+      .acct label { margin-top:8px; } .acct label:first-child { margin-top:0; }
       .filters input, .filters select { flex:1; min-width:160px; }
     </style>
   </head>
@@ -105,7 +107,9 @@
             <label>Nama produk</label><input id="npName" placeholder="Contoh: Netflix 1 bulan" />
             <label>Harga (Rp, angka saja)</label><input id="npPrice" type="number" min="1" placeholder="30000" />
             <label>Deskripsi (boleh kosong — otomatis terisi template)</label><input id="npDesc" placeholder="Kosongkan untuk template bawaan" />
-            <label>Stok awal (satu akun per baris, boleh kosong)</label><textarea id="npStock" placeholder="email1:password1&#10;email2:password2"></textarea>
+            <label>Stok awal — satu kotak = satu akun (boleh kosong)</label>
+            <div id="npAccounts"></div>
+            <div class="row"><button class="btn ghost small" id="btnAddAccount" type="button">+ Tambah Akun</button><span class="muted">Tiap akun dikirim utuh ke pembeli (email + password + 2FA jadi satu), bukan terpotong per baris.</span></div>
             <p class="err" id="npErr"></p>
             <div class="row"><button class="btn" id="btnAddProduct">Simpan Produk</button></div>
           </div>
@@ -302,14 +306,50 @@
         allOrders = d.orders || [];
         renderOrders();
       }
+      // Satu kartu = satu akun. Tombol "+ Tambah Akun" menambah kartu baru,
+      // tombol "Hapus" di kartu menghapus akun itu saja (belum tersimpan).
+      function addAccountCard() {
+        const box = $("npAccounts");
+        const n = box.querySelectorAll(".acct").length + 1;
+        const el = document.createElement("div"); el.className = "acct";
+        el.innerHTML = `<strong>Akun ${n}</strong>
+          <label>Email</label><input class="a-email" autocomplete="off" placeholder="email akun" />
+          <label>Password</label><input class="a-pass" type="password" autocomplete="new-password" placeholder="password akun" />
+          <label>2FA / kode cadangan (boleh kosong)</label><input class="a-2fa" autocomplete="off" placeholder="kode 2FA" />
+          <div class="row"><button class="btn danger small a-del" type="button">Hapus akun ini</button></div>`;
+        el.querySelector(".a-del").onclick = () => { el.remove(); renumberAccounts(); };
+        box.appendChild(el);
+      }
+      function renumberAccounts() {
+        $("npAccounts").querySelectorAll(".acct strong").forEach((s, i) => { s.textContent = "Akun " + (i + 1); });
+      }
+      function collectAccounts() {
+        const out = [];
+        $("npAccounts").querySelectorAll(".acct").forEach(el => {
+          const lines = [];
+          const email = el.querySelector(".a-email").value.trim();
+          const pass = el.querySelector(".a-pass").value.trim();
+          const fa = el.querySelector(".a-2fa").value.trim();
+          if (email) lines.push("Email: " + email);
+          if (pass) lines.push("Password: " + pass);
+          if (fa) lines.push("2fa: " + fa);
+          if (lines.length) out.push(lines.join("\n")); // 1 item array = 1 akun utuh
+        });
+        return out;
+      }
       async function addProduct() {
         $("npErr").textContent = "";
+        const btn = $("btnAddProduct"); btn.disabled = true; btn.textContent = "Menyimpan…";
         try {
-          await api("/api/admin?action=products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: $("npName").value.trim(), price: Number($("npPrice").value), descr: $("npDesc").value.trim(), stock: $("npStock").value }) });
-          $("npName").value = ""; $("npPrice").value = ""; $("npDesc").value = ""; $("npStock").value = "";
+          await api("/api/admin?action=products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: $("npName").value.trim(), price: Number($("npPrice").value), descr: $("npDesc").value.trim(), stock: collectAccounts() }) });
+          $("npName").value = ""; $("npPrice").value = ""; $("npDesc").value = "";
+          $("npAccounts").innerHTML = ""; addAccountCard();
           loadProducts(); loadStats();
         } catch (e) { $("npErr").textContent = e.message; }
+        finally { btn.disabled = false; btn.textContent = "Simpan Produk"; }
       }
+      $("btnAddAccount").onclick = addAccountCard;
+      addAccountCard(); // mulai dengan 1 kotak akun
       $("btnLogin").onclick = doLogin;
       $("p").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
       $("btnLogout").onclick = async () => { await fetch("/api/admin?action=logout", { method: "POST" }); location.reload(); };
