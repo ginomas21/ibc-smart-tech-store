@@ -1,7 +1,7 @@
 // API khusus bot WA — dikunci BOT_API_KEY (env Vercel, Production).
 // Bot TIDAK memakai login session admin; kunci ini cakupannya hanya aksi di bawah.
 // GET (pakai header x-bot-key) = cek kesehatan/kunci, tanpa efek samping.
-import { fulfillExternalOrder, createProduct, addStock, updateProduct, getProduct } from "../lib/db.js";
+import { fulfillExternalOrder, createProduct, addStock, updateProduct, deleteProduct, getProduct } from "../lib/db.js";
 
 function auth(req, res) {
   if (!process.env.BOT_API_KEY) {
@@ -53,6 +53,15 @@ export default async function handler(req, res) {
       if (!pr) return res.status(404).json({ error: "product_not_found" });
       const added = await addStock(String(body.product_id), items);
       return res.status(200).json({ ok: true, added });
+    }
+    // SEMENTARA 2026-10-25: hard-delete via BOT_API_KEY, hanya untuk
+    // menghapus 4 produk duplikat rusak — DIHAPUS LAGI setelah dipakai.
+    if (body.action === "delete-product") {
+      if (!body.product_id) return res.status(400).json({ error: "product_id wajib" });
+      const pr = await getProduct(String(body.product_id));
+      if (!pr) return res.status(404).json({ error: "product_not_found" });
+      await deleteProduct(String(body.product_id));
+      return res.status(200).json({ ok: true, deleted: String(body.product_id) });
     }
     if (body.action === "set-active") {
       if (!body.product_id) return res.status(400).json({ error: "product_id wajib" });
