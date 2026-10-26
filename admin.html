@@ -107,9 +107,9 @@
             <label>Nama produk</label><input id="npName" placeholder="Contoh: Netflix 1 bulan" />
             <label>Harga (Rp, angka saja)</label><input id="npPrice" type="number" min="1" placeholder="30000" />
             <label>Deskripsi (boleh kosong — otomatis terisi template)</label><input id="npDesc" placeholder="Kosongkan untuk template bawaan" />
-            <label>Stok awal — satu kotak = satu akun (boleh kosong)</label>
+            <label>Stok awal — satu kotak = satu item (akun atau link, boleh banyak baris, boleh kosong)</label>
             <div id="npAccounts"></div>
-            <div class="row"><button class="btn ghost small" id="btnAddAccount" type="button">+ Tambah Akun</button><span class="muted">Tiap akun dikirim utuh ke pembeli (email + password + 2FA jadi satu), bukan terpotong per baris.</span></div>
+            <div class="row"><button class="btn ghost small" id="btnAddAccount" type="button">+ Tambah Akun</button><span class="muted">Tiap item dikirim utuh ke pembeli (akun atau link, boleh banyak baris), bukan terpotong per baris.</span></div>
             <p class="err" id="npErr"></p>
             <div class="row"><button class="btn" id="btnAddProduct">Simpan Produk</button></div>
           </div>
@@ -251,7 +251,7 @@
           const el = document.createElement("div"); el.className = "card";
           el.innerHTML = `<div class="prod-head"><strong></strong><span>${rp(p.price)} · stok ${p.stock_count} · ${p.active ? "aktif" : "nonaktif"}</span></div>
             <p class="muted" style="white-space:pre-line"></p>
-            <label>Tambah stok (satu akun per baris)</label><textarea class="stk"></textarea>
+            <label>Tambah stok (satu item — boleh banyak baris)</label><textarea class="stk"></textarea>
             <div class="row">
               <button class="btn small addstk">Tambah Stok</button>
               <button class="btn ghost small toggle">${p.active ? "Nonaktifkan" : "Aktifkan"}</button>
@@ -262,7 +262,9 @@
           el.querySelector("p").textContent = p.descr || "";
           el.querySelector(".addstk").onclick = async () => {
             const msg = el.querySelector(".msg");
-            try { const r = await api("/api/admin?action=stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productId: p.id, stock: el.querySelector(".stk").value }) }); msg.textContent = `+${r.added} stok, total ${r.stock_count}`; loadProducts(); }
+            const v = el.querySelector(".stk").value.trim();
+            if (!v) { msg.textContent = "Isi dulu stoknya."; return; }
+            try { const r = await api("/api/admin?action=stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productId: p.id, stock: [v] }) }); msg.textContent = `+${r.added} stok, total ${r.stock_count}`; loadProducts(); }
             catch (e) { msg.textContent = e.message; }
           };
           el.querySelector(".toggle").onclick = async () => { await api("/api/admin?action=products", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id, active: !p.active }) }); loadProducts(); };
@@ -306,16 +308,16 @@
         allOrders = d.orders || [];
         renderOrders();
       }
-      // Satu kartu = satu akun. Tombol "+ Tambah Akun" menambah kartu baru,
-      // tombol "Hapus" di kartu menghapus akun itu saja (belum tersimpan).
+      // Satu kartu = satu item stok (teks bebas: akun email+password atau
+      // link klaim, boleh banyak baris). Tombol "+ Tambah Akun" menambah
+      // kartu baru, tombol "Hapus" di kartu menghapus item itu saja
+      // (belum tersimpan).
       function addAccountCard() {
         const box = $("npAccounts");
         const n = box.querySelectorAll(".acct").length + 1;
         const el = document.createElement("div"); el.className = "acct";
         el.innerHTML = `<strong>Akun ${n}</strong>
-          <label>Email</label><input class="a-email" autocomplete="off" placeholder="email akun" />
-          <label>Password</label><input class="a-pass" type="password" autocomplete="new-password" placeholder="password akun" />
-          <label>2FA / kode cadangan (boleh kosong)</label><input class="a-2fa" autocomplete="off" placeholder="kode 2FA" />
+          <label>Isi item (akun atau link, boleh banyak baris)</label><textarea class="a-text" autocomplete="off" placeholder="email akun&#10;password akun&#10;2FA (opsional)&#10;&#10;atau tempel link klaim di sini"></textarea>
           <div class="row"><button class="btn danger small a-del" type="button">Hapus akun ini</button></div>`;
         el.querySelector(".a-del").onclick = () => { el.remove(); renumberAccounts(); };
         box.appendChild(el);
@@ -326,14 +328,8 @@
       function collectAccounts() {
         const out = [];
         $("npAccounts").querySelectorAll(".acct").forEach(el => {
-          const lines = [];
-          const email = el.querySelector(".a-email").value.trim();
-          const pass = el.querySelector(".a-pass").value.trim();
-          const fa = el.querySelector(".a-2fa").value.trim();
-          if (email) lines.push("Email: " + email);
-          if (pass) lines.push("Password: " + pass);
-          if (fa) lines.push("2fa: " + fa);
-          if (lines.length) out.push(lines.join("\n")); // 1 item array = 1 akun utuh
+          const v = el.querySelector(".a-text").value.trim();
+          if (v) out.push(v); // 1 kartu = 1 item utuh (boleh banyak baris)
         });
         return out;
       }
