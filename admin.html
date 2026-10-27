@@ -93,6 +93,22 @@
             <div class="stat"><div class="num" id="stProducts">0</div><div class="lbl">Produk aktif / total</div></div>
             <div class="stat"><div class="num" id="stStock">0</div><div class="lbl">Stok tersedia (akun)</div></div>
           </div>
+          <div class="card">
+            <div class="prod-head"><strong>💰 Saldo Penarikan</strong><span id="wdBalance"></span></div>
+            <p class="muted" style="margin-top:6px">Saldo tersedia = total pendapatan sukses dikurangi penarikan yang sudah diajukan/diproses. Penarikan di sini hanya pengajuan — transfernya dilakukan owner utama secara manual.</p>
+            <div class="row"><button class="btn" id="btnShowWd">Tarik Saldo</button></div>
+            <div id="wdForm" style="display:none;margin-top:12px">
+              <label>Nama</label><input id="wdName" placeholder="Nama penerima penarikan" />
+              <label>Jenis rekening / e-wallet</label><select id="wdType"><option value="GoPay">GoPay</option><option value="DANA">DANA</option><option value="ShopeePay">ShopeePay</option><option value="Bank Lainnya">Rekening bank lainnya</option></select>
+              <label>Nomor rekening / e-wallet</label><input id="wdNumber" placeholder="Nomor rekening atau nomor e-wallet" />
+              <label>Nominal penarikan (Rp)</label><input id="wdAmount" type="number" min="1" placeholder="Contoh: 500000" />
+              <p class="err" id="wdErr"></p>
+              <div class="row"><button class="btn" id="btnWdSubmit">Tarik Sekarang</button><button class="btn ghost" id="btnWdCancel">Batal</button></div>
+            </div>
+            <p class="muted" id="wdMsg"></p>
+          </div>
+          <h2>📤 Riwayat Penarikan</h2>
+          <div id="wdList"></div>
           <h2>🏆 Produk Terlaris</h2>
           <div class="card">
             <div style="overflow-x:auto"><table><thead><tr><th>Produk</th><th>Terjual</th><th>Transaksi</th><th>Pendapatan</th></tr></thead><tbody id="topRows"></tbody></table></div>
@@ -191,7 +207,37 @@
           $("who").textContent = d.username; showPanel(); loadAll();
         } catch (e) { $("loginErr").textContent = e.message; }
       }
-      async function loadAll() { loadStats(); loadProducts(); loadOrders(); loadResellers(); }
+      async function loadAll() { loadStats(); loadProducts(); loadOrders(); loadResellers(); loadWithdrawals(); }
+      async function loadWithdrawals() {
+        try {
+          const d = await api("/api/admin?action=withdrawals");
+          const box = $("wdList"); box.innerHTML = "";
+          if (!d.withdrawals.length) { box.innerHTML = '<div class="card muted">Belum ada pengajuan penarikan.</div>'; return; }
+          for (const w of d.withdrawals) {
+            const el = document.createElement("div"); el.className = "card";
+            const date = new Date(w.created_at).toLocaleString("id-ID");
+            el.innerHTML = `<div class="prod-head"><strong></strong><span>${w.status === "selesai" ? "selesai" : "menunggu"} · ${date}</span></div>
+              <p class="muted" style="margin-top:6px">${w.account_type} · ${w.account_number}</p>
+              <div class="row">${w.status === "menunggu" ? '<button class="btn small done">Tandai Selesai</button>' : ""}<span class="muted msg"></span></div>`;
+            el.querySelector("strong").textContent = w.name + " — " + rp(w.amount);
+            const btn = el.querySelector(".done");
+            if (btn) btn.onclick = async () => { await api("/api/admin?action=withdrawals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: w.id, status: "selesai" }) }); loadWithdrawals(); loadStats(); };
+            box.appendChild(el);
+          }
+        } catch (e) { /* riwayat gagal dimuat — tab lain tetap jalan */ }
+      }
+      async function submitWithdrawal() {
+        $("wdErr").textContent = ""; $("wdMsg").textContent = "";
+        const amount = Number($("wdAmount").value);
+        if (!$("wdName").value.trim() || !$("wdNumber").value.trim() || !(amount > 0)) { $("wdErr").textContent = "Lengkapi nama, nomor rekening/e-wallet, dan nominal (> 0)."; return; }
+        try {
+          await api("/api/admin?action=withdrawals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: $("wdName").value.trim(), account_type: $("wdType").value, account_number: $("wdNumber").value.trim(), amount }) });
+          $("wdForm").style.display = "none";
+          $("wdName").value = ""; $("wdNumber").value = ""; $("wdAmount").value = "";
+          $("wdMsg").textContent = "Permintaan penarikan berhasil dikirim. Owner utama akan memproses penarikan penghasilanmu.";
+          loadWithdrawals(); loadStats();
+        } catch (e) { $("wdErr").textContent = e.message; }
+      }
       async function loadStats() {
         try {
           const s = await api("/api/admin?action=stats");
@@ -203,6 +249,7 @@
           $("stSaved").textContent = rp(s.orders.saved);
           $("stProducts").textContent = s.products.active + " / " + s.products.total;
           $("stStock").textContent = s.products.stock;
+          if (s.withdrawals) $("wdBalance").textContent = "Tersedia " + rp(s.withdrawals.available);
           const tb = $("topRows"); tb.innerHTML = "";
           if (!s.topProducts.length) tb.innerHTML = '<tr><td colspan="4" class="muted">Belum ada penjualan sukses.</td></tr>';
           for (const t of s.topProducts) {
@@ -381,6 +428,9 @@
       $("p").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
       $("btnLogout").onclick = async () => { await fetch("/api/admin?action=logout", { method: "POST" }); location.reload(); };
       $("btnAddProduct").onclick = addProduct;
+      $("btnShowWd").onclick = () => { $("wdErr").textContent = ""; $("wdForm").style.display = "block"; };
+      $("btnWdSubmit").onclick = submitWithdrawal;
+      $("btnWdCancel").onclick = () => { $("wdForm").style.display = "none"; };
       $("btnSaveProd").onclick = saveProdEdit;
       $("btnCancelProdEdit").onclick = () => { $("prodEditCard").style.display = "none"; editingProdId = null; };
       $("btnAddReseller").onclick = addReseller;
